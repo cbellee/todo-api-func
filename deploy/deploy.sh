@@ -1,35 +1,35 @@
 #!/bin/bash
 
-while getopts "s:p:" opt; do
+# set -x
+SKIP_BUILD=
+PRIVATE_LINK=
+while getopts "sp" opt
+do
   case $opt in
-    s)
-      skip=${OPTARG}
-      ;;
-    p)
-      private=${OPTARG}
-      ;;
+    s) SKIP_BUILD=1;;
+    p) PRIVATE_LINK=1;;
   esac
 done
 
 LOCATION='australiaeast'
-APP_NAME='todo-api-func'
+APP_NAME='todo-api'
 RG_NAME="$APP_NAME-rg"
 ENVIRONMENT=dev
 SEMVER=0.1.0
 TAG="$ENVIRONMENT-$SEMVER"
 IMAGE_NAME="func-api:$TAG"
-TEMPLATE_PATH=./main.bicep
+IS_PRIVATE='false'
 
-if [ -z ${privatelink+x} ]
+if [ ! -z "$PRIVATE_LINK" ]
 then
-    TEMPLATE_PATH=./main.privatelink.bicep
-    echo "TEMPLATE_PATH: $TEMPLATE_PATH"
+    IS_PRIVATE='true'
+    echo "IS_PRIVATE: $IS_PRIVATE"
 
     RG_NAME="$APP_NAME-private-rg"
     echo "RG_NAME: $RG_NAME"
 fi
 
-# load the .env file 
+# load the .env variable file
 source ./.env
 
 # create resource group
@@ -44,13 +44,12 @@ az deployment group create \
 
 ACR_NAME=$(az deployment group show --resource-group $RG_NAME --name 'acr-deployment' --query properties.outputs.acrName.value -o tsv)
 
-if [ -z !${skip+x} ]
+if [ ! -z "$SKIP_BUILD" ]
 then
-   # build image in ACR
+    echo "skipping container image build..." 
+else
     echo "building container image..." 
     az acr build -r $ACR_NAME -t $IMAGE_NAME -f ../func/Dockerfile ../func
-else
-    echo "skipping container image build..." 
 fi
 
 IMAGE_FULL_NAME="${ACR_NAME}.azurecr.io/${IMAGE_NAME}"
@@ -59,10 +58,11 @@ IMAGE_FULL_NAME="${ACR_NAME}.azurecr.io/${IMAGE_NAME}"
 az deployment group create \
     --name 'infra-deployment' \
     --resource-group $RG_NAME \
-    --template-file $TEMPLATE_PATH \
+    --template-file ./main.bicep \
     --parameters location=$LOCATION \
     --parameters appName=$APP_NAME \
     --parameters environment='dev' \
+    --parameters isPrivate=$IS_PRIVATE \
     --parameters sqlAdminUserPassword=$SQL_ADMIN_USER_PASSWORD \
     --parameters containerImageName=$IMAGE_FULL_NAME \
     --parameters acrName=$ACR_NAME
