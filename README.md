@@ -1,5 +1,5 @@
-# Azure Function custom container
-This example deploys a small todo list application written in Golang as a custom container image to an Azure Function running on a Linux App Service plan. 
+# Azure Function custom handler
+This example builds and deploys a custom Azure function container image to a Linux App Service plan. 
 
 The Bicep template also deploys the following resources:
 - Azure SQL Server
