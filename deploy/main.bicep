@@ -32,6 +32,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2022-02-01-preview' existin
 
 resource userManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2022-01-31-preview' = {
   name: userManagedIdentityName
+  tags: tags
   location: location
 }
 
@@ -48,6 +49,7 @@ resource userManagedIdentityRoleAssignment 'Microsoft.Authorization/roleAssignme
 resource acrPrivateEndpoint 'Microsoft.Network/privateEndpoints@2021-05-01' = if (isPrivate) {
   name: 'acr-private-endpoint'
   location: location
+  tags: tags
   properties: {
     subnet: {
       id: vnet.properties.subnets[1].id
@@ -69,6 +71,7 @@ resource acrPrivateEndpoint 'Microsoft.Network/privateEndpoints@2021-05-01' = if
 resource acrPrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (isPrivate) {
   name: 'privatelink${az.environment().suffixes.acrLoginServer}'
   location: 'global'
+  tags: tags
   dependsOn: [
     vnet
   ]
@@ -78,6 +81,7 @@ resource acrPrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetwork
   parent: acrPrivateDnsZone
   name: 'acr-dns-zone-link'
   location: 'global'
+  tags: tags
   properties: {
     registrationEnabled: false
     virtualNetwork: {
@@ -103,6 +107,7 @@ resource acrPrivateEndpointDnsGroup 'Microsoft.Network/privateEndpoints/privateD
 resource vnet 'Microsoft.Network/virtualNetworks@2021-08-01' = {
   name: vnetName
   location: location
+  tags: tags
   properties: {
     addressSpace: {
       addressPrefixes: [
@@ -147,6 +152,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2021-08-01' = {
 resource sqlServer 'Microsoft.Sql/servers@2021-11-01-preview' = {
   name: sqlServerName
   location: location
+  tags: tags
   properties: {
     administratorLogin: sqlAdminUserName
     administratorLoginPassword: sqlAdminUserPassword
@@ -167,15 +173,16 @@ resource sqlDb 'Microsoft.Sql/servers/databases@2021-11-01-preview' = {
   location: location
   name: sqlDbName
   parent: sqlServer
+  tags: tags
   sku: {
     name: 'Basic'
   }
-  tags: tags
 }
 
 resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2021-05-01' = if (isPrivate) {
   name: 'sql-private-endpoint'
   location: location
+  tags: tags
   properties: {
     subnet: {
       id: vnet.properties.subnets[1].id
@@ -197,6 +204,7 @@ resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2021-05-01' = if
 resource sqlPrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (isPrivate) {
   name: 'privatelink${az.environment().suffixes.sqlServerHostname}'
   location: 'global'
+  tags: tags
   properties: {}
   dependsOn: [
     vnet
@@ -207,6 +215,7 @@ resource privateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLin
   parent: sqlPrivateDnsZone
   name: 'sql-dns-zone-link'
   location: 'global'
+  tags: tags
   properties: {
     registrationEnabled: false
     virtualNetwork: {
@@ -240,10 +249,6 @@ resource funcStorageAccount 'Microsoft.Storage/storageAccounts@2019-06-01' = {
   properties: {
     allowBlobPublicAccess: isPrivate ? false : true
     supportsHttpsTrafficOnly: true
-    /* networkAcls: {
-      defaultAction: 'Deny'
-      bypass: 'AzureServices'
-    } */
   }
 }
 
@@ -260,6 +265,7 @@ resource funcStorageAccountFileShare 'Microsoft.Storage/storageAccounts/fileServ
 resource storageBlobPrivateEndpoint 'Microsoft.Network/privateEndpoints@2022-01-01' = if (isPrivate) {
   name: 'storage-blob-private-endpoint'
   location: location
+  tags: tags
   properties: {
     subnet: {
       id: vnet.properties.subnets[1].id
@@ -281,6 +287,7 @@ resource storageBlobPrivateEndpoint 'Microsoft.Network/privateEndpoints@2022-01-
 resource storageFilePrivateEndpoint 'Microsoft.Network/privateEndpoints@2022-01-01' = if (isPrivate) {
   name: 'storage-file-private-endpoint'
   location: location
+  tags: tags
   properties: {
     subnet: {
       id: vnet.properties.subnets[1].id
@@ -302,6 +309,7 @@ resource storageFilePrivateEndpoint 'Microsoft.Network/privateEndpoints@2022-01-
 resource storageTablePrivateEndpoint 'Microsoft.Network/privateEndpoints@2022-01-01' = if (isPrivate) {
   name: 'storage-table-private-endpoint'
   location: location
+  tags: tags
   properties: {
     subnet: {
       id: vnet.properties.subnets[1].id
@@ -323,16 +331,19 @@ resource storageTablePrivateEndpoint 'Microsoft.Network/privateEndpoints@2022-01
 resource storageBlobPrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (isPrivate) {
   name: 'privatelink.blob.${az.environment().suffixes.storage}'
   location: 'global'
+  tags: tags
 }
 
 resource storageFilePrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (isPrivate) {
   name: 'privatelink.file.${az.environment().suffixes.storage}'
   location: 'global'
+  tags: tags
 }
 
 resource storageTablePrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (isPrivate) {
   name: 'privatelink.table.${az.environment().suffixes.storage}'
   location: 'global'
+  tags: tags
 }
 
 resource storageBlobPrivateDNSZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2022-01-01' = if (isPrivate) {
@@ -381,6 +392,7 @@ resource storageBlobPrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtua
   name: 'blob-storage-dns-zone-link'
   parent: storageBlobPrivateDnsZone
   location: 'global'
+  tags: tags
   properties: {
     virtualNetwork: {
       id: vnet.id
@@ -393,6 +405,7 @@ resource storageFilePrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtua
   name: 'file-storage-dns-zone-link'
   parent: storageFilePrivateDnsZone
   location: 'global'
+  tags: tags
   properties: {
     virtualNetwork: {
       id: vnet.id
@@ -405,6 +418,7 @@ resource storageTablePrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtu
   name: 'table-storage-dns-zone-link'
   parent: storageTablePrivateDnsZone
   location: 'global'
+  tags: tags
   properties: {
     virtualNetwork: {
       id: vnet.id
@@ -416,6 +430,7 @@ resource storageTablePrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtu
 resource hostingPlan 'Microsoft.Web/serverfarms@2020-06-01' = {
   name: hostingPlanName
   location: location
+  tags: tags
   sku: {
     name: 'EP1'
     tier: 'ElasticPremium'
@@ -433,10 +448,8 @@ resource hostingPlan 'Microsoft.Web/serverfarms@2020-06-01' = {
 }
 
 resource funcApp 'Microsoft.Web/sites@2021-01-01' = {
-  dependsOn: [
-    appInsights
-  ]
   name: funcAppName
+  tags: tags
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
@@ -445,7 +458,6 @@ resource funcApp 'Microsoft.Web/sites@2021-01-01' = {
   }
   kind: 'functionapp,linux'
   location: location
-  tags: {}
   properties: {
     reserved: true
     siteConfig: {
@@ -500,6 +512,9 @@ resource funcApp 'Microsoft.Web/sites@2021-01-01' = {
     serverFarmId: hostingPlan.id
     clientAffinityEnabled: false
   }
+  dependsOn: [
+    appInsights
+  ]
 }
 
 resource vnetIntegration 'Microsoft.Web/sites/networkConfig@2021-03-01' = {
@@ -515,7 +530,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02-preview' = {
   name: appInsightsName
   kind: 'web'
   location: location
-  tags: {}
+  tags: tags
   properties: {
     Application_Type: 'web'
   }
