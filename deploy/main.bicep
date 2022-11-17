@@ -17,10 +17,12 @@ var hostingPlanName = '${prefix}-asp'
 var appInsightsName = '${prefix}-ai'
 var sqlServerName = '${prefix}-sql-server'
 var vnetName = '${prefix}-vnet'
+var keyVaultName = '${prefix}-kv'
 var userManagedIdentityName = '${prefix}-umid'
 var dbCxnString = 'server=${sqlServer.properties.fullyQualifiedDomainName};user id=${sqlAdminUserName};password=${sqlAdminUserPassword};port=1433;database=${sqlDbName};'
 var acrPullRoleDefinitionId = resourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var fileShareName = 'myshare'
+var keyVaultSecretsUserRoleId = resourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
 var tags = {
   environment: environment
   costCenter: '1234567890'
@@ -34,6 +36,65 @@ resource userManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2
   name: userManagedIdentityName
   tags: tags
   location: location
+}
+
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
+  name: keyVaultName
+  location: location
+  properties: {
+    sku: {
+      family: 'A'
+      name: 'standard'
+    }
+    enableSoftDelete: true
+    enableRbacAuthorization: true
+    tenantId: tenant().tenantId
+    /* accessPolicies: [
+      {
+        objectId: adminUserObjectId
+        permissions: {
+          secrets: [
+            'all'
+          ]
+        }
+        tenantId: tenant().tenantId
+      }
+    ] */
+  }
+}
+
+module keyVaultSecretsUserRoleAssignment 'modules/role_assignment.bicep' = {
+  name: 'key-vault-secrets-user-role-assignment'
+  params: {
+    keyVaultName: keyVaultName
+    objectId: userManagedIdentity.properties.principalId
+    roleDefinitionId: keyVaultSecretsUserRoleId
+  }
+}
+
+module keyVaultAccessPolicy 'modules/keyvault_policy.bicep' = {
+  name: 'keyvault-access-policy-module'
+  params: {
+    keyVaultName: keyVaultName
+    objectId: userManagedIdentity.properties.principalId
+    permissions: {
+      secrets: [
+        'get'
+        'list'
+      ]
+    }
+  }
+  dependsOn: [
+    keyVault
+  ]
+}
+
+resource secret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+  parent: keyVault
+  name: 'dbCxnString'
+  properties: {
+    value: dbCxnString
+  }
 }
 
 resource userManagedIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -459,6 +520,7 @@ resource funcApp 'Microsoft.Web/sites@2021-01-01' = {
   kind: 'functionapp,linux'
   location: location
   properties: {
+    keyVaultReferenceIdentity: userManagedIdentity.id
     reserved: true
     siteConfig: {
       ftpsState: 'Disabled'
@@ -466,8 +528,9 @@ resource funcApp 'Microsoft.Web/sites@2021-01-01' = {
       detailedErrorLoggingEnabled: true
       httpLoggingEnabled: true
       vnetRouteAllEnabled: isPrivate ? true : false
+      keyVaultReferenceIdentity: userManagedIdentity.id
       acrUseManagedIdentityCreds: true
-      acrUserManagedIdentityID: userManagedIdentity.properties.clientId
+      acrUserManagedIdentityID: userManagedIdentity.id
       linuxFxVersion: 'DOCKER|${containerImageName}'
       appSettings: [
         {
@@ -480,7 +543,7 @@ resource funcApp 'Microsoft.Web/sites@2021-01-01' = {
         }
         {
           name: 'DSN'
-          value: dbCxnString // KeyVault reference doesn't seem to work for custom container images? '@Microsoft.KeyVault(SecretUri=${secret.properties.secretUri})'
+          value: '@Microsoft.KeyVault(SecretUri=${secret.properties.secretUri})'
         }
         {
           name: 'FUNCTIONS_EXTENSION_VERSION'
