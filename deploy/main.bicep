@@ -6,20 +6,24 @@ param isPrivate bool = false
 param containerImageName string
 param acrName string
 param sqlDbName string = 'todosDb'
+param adminUserName string = 'localuser'
+param productApiYaml string
 
 @secure()
+param adminUserPassword string
+
 param sqlAdminUserPassword string
 
-var prefix = uniqueString(resourceGroup().id)
-var funcAppName = '${prefix}-${environment}-${appName}'
-var funcStorageAccountName = '${prefix}stor'
-var hostingPlanName = '${prefix}-asp'
-var appInsightsName = '${prefix}-ai'
-var sqlServerName = '${prefix}-sql-server'
-var vnetName = '${prefix}-vnet'
-var keyVaultName = '${prefix}-kv'
-var userManagedIdentityName = '${prefix}-umid'
-var dbCxnString = 'server=${sqlServer.properties.fullyQualifiedDomainName};user id=${sqlAdminUserName};password=${sqlAdminUserPassword};port=1433;database=${sqlDbName};'
+var suffix = uniqueString(resourceGroup().id)
+var funcAppName = '${environment}-${appName}-${suffix}'
+var funcStorageAccountName = 'stor${suffix}'
+var hostingPlanName = 'asp-${suffix}'
+var appInsightsName = 'ai-${suffix}'
+var sqlServerName = 'sql-server-${suffix}'
+var vnetName = 'vnet-${suffix}'
+var keyVaultName = 'kv-${suffix}'
+var userManagedIdentityName = 'umid-${suffix}'
+var dbCxnString = 'server=tcp:${sqlServer.properties.fullyQualifiedDomainName};user id=${sqlAdminUserName};password=${sqlAdminUserPassword};port=1433;database=${sqlDbName};'
 var acrPullRoleDefinitionId = resourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var fileShareName = 'myshare'
 var keyVaultSecretsUserRoleId = resourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
@@ -30,6 +34,59 @@ var tags = {
 
 resource acr 'Microsoft.ContainerRegistry/registries@2022-02-01-preview' existing = {
   name: acrName
+}
+
+resource vnet 'Microsoft.Network/virtualNetworks@2021-08-01' = {
+  name: vnetName
+  location: location
+  tags: tags
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        '10.0.0.0/16'
+      ]
+    }
+    subnets: [
+      {
+        name: 'vnetIntegrationSubnet'
+        properties: {
+          addressPrefix: '10.0.0.0/24'
+          delegations: [
+            {
+              name: 'appSvcDelegation'
+              properties: {
+                serviceName: 'Microsoft.Web/serverFarms'
+              }
+            }
+          ]
+        }
+      }
+      {
+        name: 'privateEndpointSubnet'
+        properties: {
+          addressPrefix: '10.0.1.0/24'
+          privateEndpointNetworkPolicies: 'Disabled'
+          privateLinkServiceNetworkPolicies: 'Enabled'
+        }
+      }
+      {
+        name: 'apimSubnet'
+        properties: {
+          addressPrefix: '10.0.2.0/24'
+          privateEndpointNetworkPolicies: 'Disabled'
+          privateLinkServiceNetworkPolicies: 'Enabled'
+        }
+      }
+      {
+        name: 'mgmtSubnet'
+        properties: {
+          addressPrefix: '10.0.3.0/24'
+          privateEndpointNetworkPolicies: 'Disabled'
+          privateLinkServiceNetworkPolicies: 'Enabled'
+        }
+      }
+    ]
+  }
 }
 
 resource userManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2022-01-31-preview' = {
@@ -49,17 +106,6 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
     enableSoftDelete: true
     enableRbacAuthorization: true
     tenantId: tenant().tenantId
-    /* accessPolicies: [
-      {
-        objectId: adminUserObjectId
-        permissions: {
-          secrets: [
-            'all'
-          ]
-        }
-        tenantId: tenant().tenantId
-      }
-    ] */
   }
 }
 
@@ -70,6 +116,9 @@ module keyVaultSecretsUserRoleAssignment 'modules/role_assignment.bicep' = {
     objectId: userManagedIdentity.properties.principalId
     roleDefinitionId: keyVaultSecretsUserRoleId
   }
+  dependsOn: [
+    keyVault
+  ]
 }
 
 module keyVaultAccessPolicy 'modules/keyvault_policy.bicep' = {
@@ -159,51 +208,6 @@ resource acrPrivateEndpointDnsGroup 'Microsoft.Network/privateEndpoints/privateD
         name: 'config1'
         properties: {
           privateDnsZoneId: acrPrivateDnsZone.id
-        }
-      }
-    ]
-  }
-}
-
-resource vnet 'Microsoft.Network/virtualNetworks@2021-08-01' = {
-  name: vnetName
-  location: location
-  tags: tags
-  properties: {
-    addressSpace: {
-      addressPrefixes: [
-        '10.0.0.0/16'
-      ]
-    }
-    subnets: [
-      {
-        name: 'vnetIntegrationSubnet'
-        properties: {
-          addressPrefix: '10.0.0.0/24'
-          delegations: [
-            {
-              name: 'appSvcDelegation'
-              properties: {
-                serviceName: 'Microsoft.Web/serverFarms'
-              }
-            }
-          ]
-          serviceEndpoints: [
-            {
-              locations: [
-                location
-              ]
-              service: 'Microsoft.Sql'
-            }
-          ]
-        }
-      }
-      {
-        name: 'privateEndpointSubnet'
-        properties: {
-          addressPrefix: '10.0.1.0/24'
-          privateEndpointNetworkPolicies: 'Disabled'
-          privateLinkServiceNetworkPolicies: 'Enabled'
         }
       }
     ]
@@ -517,7 +521,7 @@ resource funcApp 'Microsoft.Web/sites@2021-01-01' = {
       '${userManagedIdentity.id}': {}
     }
   }
-  kind: 'functionapp,linux'
+  kind: 'functionapp,linux,container'
   location: location
   properties: {
     keyVaultReferenceIdentity: userManagedIdentity.id
@@ -532,44 +536,6 @@ resource funcApp 'Microsoft.Web/sites@2021-01-01' = {
       acrUseManagedIdentityCreds: true
       acrUserManagedIdentityID: userManagedIdentity.id
       linuxFxVersion: 'DOCKER|${containerImageName}'
-      appSettings: [
-        {
-          name: 'WEBSITE_DNS_SERVER'
-          value: '168.63.129.16'
-        }
-        {
-          name: 'WEBSITE_CONTENTOVERVNET'
-          value: isPrivate ? '1' : '0'
-        }
-        {
-          name: 'DSN'
-          value: '@Microsoft.KeyVault(SecretUri=${secret.properties.secretUri})'
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
-          value: reference('microsoft.insights/components/${appInsightsName}', '2015-05-01').InstrumentationKey
-        }
-        {
-          name: 'WEBSITE_CONTENTSHARE'
-          value: fileShareName
-        }
-        {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${funcStorageAccount.name};AccountKey=${listKeys(funcStorageAccount.id, '2019-06-01').keys[0].value};'
-        }
-        {
-          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${funcStorageAccount.name};AccountKey=${listKeys(funcStorageAccount.id, '2019-06-01').keys[0].value};'
-        }
-        {
-          name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE' // https://github.com/Azure/Azure-Functions/wiki/When-and-Why-should-I-set-WEBSITE_ENABLE_APP_SERVICE_STORAGE
-          value: 'false'
-        }
-      ]
       use32BitWorkerProcess: false
     }
     serverFarmId: hostingPlan.id
@@ -578,6 +544,58 @@ resource funcApp 'Microsoft.Web/sites@2021-01-01' = {
   dependsOn: [
     appInsights
   ]
+}
+
+resource webConfig 'Microsoft.Web/sites/config@2022-03-01' = {
+  name: 'web'
+  parent: funcApp
+  properties: {
+    acrUseManagedIdentityCreds: true
+    acrUserManagedIdentityID: userManagedIdentity.properties.clientId
+    /*  keyVaultReferenceIdentity: userManagedIdentity.id */
+    appSettings: [
+      {
+        name: 'WEBSITE_DNS_SERVER'
+        value: '168.63.129.16'
+      }
+      {
+        name: 'WEBSITE_CONTENTOVERVNET'
+        value: isPrivate ? '1' : '0'
+      }
+      {
+        name: 'FUNCTIONS_WORKER_RUNTIME'
+        value: 'custom'
+      }
+      {
+        name: 'DSN'
+        value: '@Microsoft.KeyVault(SecretUri=${secret.properties.secretUri})'
+      }
+      {
+        name: 'FUNCTIONS_EXTENSION_VERSION'
+        value: '~4'
+      }
+      {
+        name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
+        value: reference('microsoft.insights/components/${appInsightsName}', '2015-05-01').InstrumentationKey
+      }
+      {
+        name: 'WEBSITE_CONTENTSHARE'
+        value: fileShareName
+      }
+      {
+        name: 'AzureWebJobsStorage'
+        value: 'DefaultEndpointsProtocol=https;AccountName=${funcStorageAccount.name};AccountKey=${listKeys(funcStorageAccount.id, '2019-06-01').keys[0].value};'
+      }
+      {
+        name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
+        value: 'DefaultEndpointsProtocol=https;AccountName=${funcStorageAccount.name};AccountKey=${listKeys(funcStorageAccount.id, '2019-06-01').keys[0].value};'
+      }
+      {
+        name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE' // https://github.com/Azure/Azure-Functions/wiki/When-and-Why-should-I-set-WEBSITE_ENABLE_APP_SERVICE_STORAGE
+        value: 'false'
+      }
+    ]
+  }
 }
 
 resource vnetIntegration 'Microsoft.Web/sites/networkConfig@2021-03-01' = {
@@ -599,5 +617,68 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02-preview' = {
   }
 }
 
+module apim 'modules/apim.bicep' = {
+  name: 'apim-module'
+  params: {
+    location: location
+    subnetId: vnet.properties.subnets[2].id
+  }
+}
+
+module openApiDefinition 'modules/api.bicep' = {
+  name: 'todo-api-module'
+  params: {
+    apimName: apim.outputs.apimName
+    apiName: 'todo-api'
+    apiPath: ''
+    displayName: 'Todo API'
+    isSubscriptionRequired: false
+    openApiYaml: productApiYaml
+    backendUri: 'https://${funcApp.properties.defaultHostName}'
+  }
+  dependsOn: [
+    apim
+  ]
+}
+
+/* 
+resource kvPrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (isPrivate) {
+  name: 'privatelink${az.environment().suffixes.keyvaultDns}'
+  location: 'global'
+  tags: tags
+  dependsOn: [
+    vnet
+  ]
+}
+
+resource kvPrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (isPrivate) {
+  parent: acrPrivateDnsZone
+  name: 'acr-dns-zone-link'
+  location: 'global'
+  tags: tags
+  properties: {
+    registrationEnabled: false
+    virtualNetwork: {
+      id: vnet.id
+    }
+  }
+}
+
+resource acrPrivateEndpointDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2021-05-01' = if (isPrivate) {
+  name: '${acrPrivateEndpoint.name}/acr-pe-dns-group'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'config1'
+        properties: {
+          privateDnsZoneId: acrPrivateDnsZone.id
+        }
+      }
+    ]
+  }
+}
+ */
+
+output apimFqdn string = apim.outputs.apimFqdn
 output functionFqdn string = funcApp.properties.defaultHostName
 output dbName string = sqlDb.name

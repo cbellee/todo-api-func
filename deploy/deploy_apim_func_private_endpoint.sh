@@ -19,7 +19,6 @@ SEMVER=0.1.0
 TAG="$ENVIRONMENT-$SEMVER"
 IMAGE_NAME="func-api:$TAG"
 IS_PRIVATE='false'
-ADMIN_USER_NAME='localadmin'
 
 if [ ! -z "$PRIVATE_LINK" ]
 then
@@ -66,15 +65,7 @@ az deployment group create \
     --parameters isPrivate=$IS_PRIVATE \
     --parameters sqlAdminUserPassword=$SQL_ADMIN_USER_PASSWORD \
     --parameters containerImageName=$IMAGE_FULL_NAME \
-    --parameters acrName=$ACR_NAME \
-    --parameters adminUserName=$ADMIN_USER_NAME \
-    --parameters adminUserPassword=$ADMIN_USER_PASSWORD \
-    --parameters productApiYaml="$(cat ../func/api/api.yaml)"
+    --parameters acrName=$ACR_NAME
 
-APIM_FQDN=$(az deployment group show --name 'infra-deployment' -g $RG_NAME --query properties.outputs.apimFqdn.value -o tsv)
 FUNCTION_FQDN=$(az deployment group show --name 'infra-deployment' -g $RG_NAME --query properties.outputs.functionFqdn.value -o tsv)
-
 echo $FUNCTION_FQDN
-
-curl -X POST -d '{"description":"get dog food"}' ${APIM_FQDN}/api/todos
-curl ${APIM_FQDN}/api/todos
